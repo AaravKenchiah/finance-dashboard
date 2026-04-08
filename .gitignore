@@ -1,0 +1,28 @@
+# macOS
+.DS_Store
+
+# Python virtual environments
+.venv/
+venv/
+env/
+
+# Python cache files
+__pycache__/
+*.py[cod]
+
+# Test and tooling caches
+.pytest_cache/
+.mypy_cache/
+.coverage
+htmlcov/
+
+# Streamlit local state
+.streamlit/secrets.toml
+
+# Generated database artifacts
+finance.db
+*.duckdb
+
+# Editor settings
+.vscode/
+.idea/
