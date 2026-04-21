@@ -8,6 +8,7 @@ env/
 
 # Python cache files
 __pycache__/
+*.pyc
 *.py[cod]
 
 # Test and tooling caches
@@ -18,6 +19,7 @@ htmlcov/
 
 # Streamlit local state
 .streamlit/secrets.toml
+.env
 
 # Generated database artifacts
 finance.db

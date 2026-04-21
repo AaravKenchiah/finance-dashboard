@@ -33,6 +33,16 @@ class FinanceDashboardTests(unittest.TestCase):
         self.assertTrue(self.db_path.exists())
         self.assertEqual(self.inserted_rows, len(self.expected_df))
 
+    def test_transaction_csv_contains_realistic_spending_history(self) -> None:
+        self.assertGreaterEqual(len(self.expected_df), 500)
+        self.assertGreaterEqual(self.expected_df["category"].nunique(), 15)
+        self.assertGreaterEqual(self.expected_df["merchant"].nunique(), 50)
+        self.assertGreaterEqual(
+            pd.to_datetime(self.expected_df["date"]).max()
+            - pd.to_datetime(self.expected_df["date"]).min(),
+            pd.Timedelta(days=365),
+        )
+
     def test_total_spending_matches_csv_calculation(self) -> None:
         expected_total = float(self.expected_df["amount"].sum())
         actual_total = analysis.total_spending(self.db_path)
