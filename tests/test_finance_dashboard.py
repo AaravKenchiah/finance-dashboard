@@ -7,6 +7,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
+from app.streamlit_app import prepare_anomaly_display, prepare_forecast_chart
 from src import analysis
 from src.load_data import load_transactions, prepare_dataframe
 
@@ -144,6 +145,56 @@ class FinanceDashboardTests(unittest.TestCase):
         self.assertEqual(len(actual), 30)
         self.assertEqual(list(actual.columns), ["ds", "yhat", "yhat_lower", "yhat_upper"])
         self.assertFalse(actual["yhat"].isna().any())
+
+    def test_dashboard_anomaly_display_formats_recruiter_friendly_columns(self) -> None:
+        anomaly_df = pd.DataFrame(
+            {
+                "month": [pd.Timestamp("2024-04-01")],
+                "category": ["Travel"],
+                "total_spent": [140.0],
+                "rolling_mean": [100.0],
+                "rolling_std": [10.0],
+                "threshold": [120.0],
+                "amount_above_normal": [40.0],
+            }
+        )
+
+        actual = prepare_anomaly_display(anomaly_df)
+
+        self.assertEqual(
+            list(actual.columns),
+            [
+                "Month",
+                "Category",
+                "Spending",
+                "3-month average",
+                "3-month std dev",
+                "Above normal",
+            ],
+        )
+        self.assertEqual(actual.loc[0, "Month"], "2024-04")
+        self.assertEqual(actual.loc[0, "Above normal"], 40.0)
+
+    def test_dashboard_forecast_chart_combines_history_and_predictions(self) -> None:
+        month_df = pd.DataFrame(
+            {
+                "month": pd.date_range("2024-01-01", periods=2, freq="MS"),
+                "total_spent": [100.0, 125.0],
+            }
+        )
+        forecast_df = pd.DataFrame(
+            {
+                "ds": pd.date_range("2024-03-01", periods=2, freq="D"),
+                "yhat": [130.0, 132.0],
+            }
+        )
+
+        actual = prepare_forecast_chart(month_df, forecast_df)
+
+        self.assertEqual(len(actual), 4)
+        self.assertEqual(list(actual.columns), ["Historical spending", "Predicted spending"])
+        self.assertEqual(actual.loc[pd.Timestamp("2024-01-01"), "Historical spending"], 100.0)
+        self.assertEqual(actual.loc[pd.Timestamp("2024-03-01"), "Predicted spending"], 130.0)
 
     def test_top_merchants_respects_limit_and_sort_order(self) -> None:
         actual = analysis.top_merchants(limit=5, db_path=self.db_path).reset_index(drop=True)
