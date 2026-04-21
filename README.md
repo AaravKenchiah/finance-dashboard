@@ -19,7 +19,7 @@ The project is intentionally SQL-first for the core reporting layer, with Python
 ## Features
 
 - Realistic personal finance transaction dataset in `data/transactions.csv`
-- Persistent DuckDB database generated from the CSV
+- DuckDB database generated from the CSV at load time or app startup
 - Safe table refresh logic for the `transactions` table
 - Clean transaction schema with `DATE`, `DOUBLE`, and text columns
 - Reusable SQL queries stored in `sql/queries.sql`
@@ -92,6 +92,8 @@ pip install -r requirements.txt
 ```bash
 python src/load_data.py
 ```
+
+This step is useful for local development. On Streamlit Cloud, the app creates the DuckDB table from `data/transactions.csv` automatically when the database is missing.
 
 4. Start the dashboard.
 

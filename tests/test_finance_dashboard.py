@@ -7,7 +7,7 @@ from unittest.mock import patch
 
 import pandas as pd
 
-from app.streamlit_app import prepare_anomaly_display, prepare_forecast_chart
+from app.streamlit_app import ensure_database, prepare_anomaly_display, prepare_forecast_chart
 from src import analysis
 from src.load_data import load_transactions, prepare_dataframe
 
@@ -34,6 +34,18 @@ class FinanceDashboardTests(unittest.TestCase):
     def test_loader_creates_database_and_inserts_expected_rows(self) -> None:
         self.assertTrue(self.db_path.exists())
         self.assertEqual(self.inserted_rows, len(self.expected_df))
+
+    def test_app_bootstrap_creates_database_when_missing(self) -> None:
+        bootstrap_db_path = Path(self.temp_dir.name) / "bootstrap_finance.db"
+
+        ensure_database(bootstrap_db_path, CSV_PATH)
+
+        self.assertTrue(bootstrap_db_path.exists())
+        self.assertAlmostEqual(
+            analysis.total_spending(bootstrap_db_path),
+            float(self.expected_df["amount"].sum()),
+            places=2,
+        )
 
     def test_transaction_csv_contains_realistic_spending_history(self) -> None:
         self.assertGreaterEqual(len(self.expected_df), 500)

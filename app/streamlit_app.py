@@ -8,12 +8,29 @@ if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
 from src import analysis
+from src.load_data import load_transactions
 
 
 DB_PATH = PROJECT_ROOT / "finance.db"
+CSV_PATH = PROJECT_ROOT / "data" / "transactions.csv"
 
 
 st.set_page_config(page_title="Personal Finance Analytics", layout="wide")
+
+
+def ensure_database(db_path: Path = DB_PATH, csv_path: Path = CSV_PATH) -> None:
+    """Create the DuckDB transactions table from CSV when the app starts fresh."""
+    table_exists_sql = """
+        SELECT COUNT(*) AS table_count
+        FROM information_schema.tables
+        WHERE table_name = 'transactions'
+    """
+
+    with analysis.get_connection(db_path) as connection:
+        table_count = connection.execute(table_exists_sql).fetchone()[0]
+
+    if table_count == 0:
+        load_transactions(db_path, csv_path)
 
 
 def prepare_anomaly_display(anomaly_df: pd.DataFrame) -> pd.DataFrame:
@@ -70,6 +87,8 @@ def prepare_forecast_chart(month_df: pd.DataFrame, forecast_df: pd.DataFrame) ->
 def main():
     st.title("Personal Finance Analytics Dashboard")
     st.caption("SQL-first personal finance analytics powered by DuckDB and Streamlit.")
+
+    ensure_database(DB_PATH, CSV_PATH)
 
     # Load metrics and tables from analysis module
     total = analysis.total_spending(DB_PATH)
