@@ -3,6 +3,7 @@ from __future__ import annotations
 import tempfile
 import unittest
 from pathlib import Path
+from unittest.mock import patch
 
 import pandas as pd
 
@@ -103,6 +104,46 @@ class FinanceDashboardTests(unittest.TestCase):
         self.assertAlmostEqual(actual.loc[0, "rolling_mean"], 100.00, places=2)
         self.assertAlmostEqual(actual.loc[0, "rolling_std"], 10.00, places=2)
         self.assertAlmostEqual(actual.loc[0, "amount_above_normal"], 40.00, places=2)
+
+    def test_forecast_spending_fits_prophet_and_returns_future_predictions(self) -> None:
+        monthly_spending = pd.DataFrame(
+            {
+                "month": pd.date_range("2024-01-01", periods=4, freq="MS"),
+                "total_spent": [100.0, 125.0, 115.0, 150.0],
+            }
+        )
+        expected_forecast = pd.DataFrame(
+            {
+                "ds": pd.date_range("2024-05-01", periods=30, freq="D"),
+                "yhat": range(30),
+                "yhat_lower": range(-1, 29),
+                "yhat_upper": range(1, 31),
+            }
+        )
+
+        with patch("src.analysis._safe_prophet_forecast", return_value=expected_forecast) as prophet_fit:
+            actual = analysis.forecast_spending(monthly_spending, periods=30)
+
+        self.assertEqual(len(actual), 30)
+        self.assertEqual(list(actual.columns), ["ds", "yhat", "yhat_lower", "yhat_upper"])
+        prophet_input = prophet_fit.call_args.args[0]
+        self.assertEqual(list(prophet_input.columns), ["ds", "y"])
+        self.assertEqual(prophet_input["y"].tolist(), [100.0, 125.0, 115.0, 150.0])
+
+    def test_forecast_spending_returns_trend_fallback_when_prophet_fails(self) -> None:
+        monthly_spending = pd.DataFrame(
+            {
+                "month": pd.date_range("2024-01-01", periods=4, freq="MS"),
+                "total_spent": [100.0, 125.0, 115.0, 150.0],
+            }
+        )
+
+        with patch("src.analysis._safe_prophet_forecast", return_value=None):
+            actual = analysis.forecast_spending(monthly_spending, periods=30)
+
+        self.assertEqual(len(actual), 30)
+        self.assertEqual(list(actual.columns), ["ds", "yhat", "yhat_lower", "yhat_upper"])
+        self.assertFalse(actual["yhat"].isna().any())
 
     def test_top_merchants_respects_limit_and_sort_order(self) -> None:
         actual = analysis.top_merchants(limit=5, db_path=self.db_path).reset_index(drop=True)

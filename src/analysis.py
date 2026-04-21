@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import multiprocessing as mp
 from pathlib import Path
 from typing import Any
 
@@ -127,6 +128,111 @@ def detect_spending_anomalies(db_path: Path = DB_PATH) -> pd.DataFrame:
     return anomalies.sort_values(["month", "amount_above_normal"], ascending=[False, False]).reset_index(
         drop=True
     )
+
+
+def _empty_forecast_frame() -> pd.DataFrame:
+    return pd.DataFrame(columns=["ds", "yhat", "yhat_lower", "yhat_upper"])
+
+
+def _fit_prophet_forecast(prophet_input: pd.DataFrame, periods: int) -> pd.DataFrame:
+    from prophet import Prophet
+
+    model = Prophet(daily_seasonality=False, weekly_seasonality=False, yearly_seasonality=True)
+    model.fit(prophet_input)
+    future = model.make_future_dataframe(periods=periods, freq="D", include_history=False)
+    forecast = model.predict(future)
+    return forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]]
+
+
+def _prophet_worker(
+    prophet_records: list[dict[str, Any]],
+    periods: int,
+    result_queue: mp.Queue,
+) -> None:
+    prophet_input = pd.DataFrame.from_records(prophet_records)
+    forecast = _fit_prophet_forecast(prophet_input, periods)
+    result_queue.put(forecast.to_dict("list"))
+
+
+def _safe_prophet_forecast(prophet_input: pd.DataFrame, periods: int) -> pd.DataFrame | None:
+    context_name = "fork" if "fork" in mp.get_all_start_methods() else "spawn"
+    context = mp.get_context(context_name)
+    result_queue = context.Queue()
+    process = context.Process(
+        target=_prophet_worker,
+        args=(prophet_input.to_dict("records"), periods, result_queue),
+    )
+
+    process.start()
+    process.join(timeout=45)
+
+    if process.is_alive():
+        process.terminate()
+        process.join()
+        return None
+
+    if process.exitcode != 0 or result_queue.empty():
+        return None
+
+    return pd.DataFrame(result_queue.get())
+
+
+def _trend_fallback_forecast(prophet_input: pd.DataFrame, periods: int) -> pd.DataFrame:
+    if prophet_input.empty:
+        return _empty_forecast_frame()
+
+    future_dates = pd.date_range(
+        prophet_input["ds"].max() + pd.Timedelta(days=1),
+        periods=periods,
+        freq="D",
+    )
+    baseline = float(prophet_input["y"].iloc[-1])
+    if len(prophet_input) > 1:
+        monthly_change = prophet_input["y"].diff().dropna().mean()
+        daily_change = float(monthly_change) / 30.4375
+    else:
+        daily_change = 0.0
+
+    yhat = pd.Series(
+        [max(baseline + (daily_change * day), 0.0) for day in range(1, periods + 1)]
+    )
+    return pd.DataFrame(
+        {
+            "ds": future_dates,
+            "yhat": yhat,
+            "yhat_lower": yhat * 0.9,
+            "yhat_upper": yhat * 1.1,
+        }
+    )
+
+
+def forecast_spending(
+    monthly_spending: pd.DataFrame | None = None,
+    periods: int = 30,
+    db_path: Path = DB_PATH,
+) -> pd.DataFrame:
+    """Fit Prophet to monthly total spending and forecast future daily spend."""
+    if monthly_spending is None:
+        monthly_spending = monthly_trend(db_path)
+
+    if monthly_spending.empty:
+        return _empty_forecast_frame()
+
+    prophet_input = monthly_spending.rename(columns={"month": "ds", "total_spent": "y"})[
+        ["ds", "y"]
+    ].copy()
+    prophet_input["ds"] = pd.to_datetime(prophet_input["ds"])
+    prophet_input["y"] = pd.to_numeric(prophet_input["y"], errors="coerce")
+    prophet_input = prophet_input.dropna().sort_values("ds")
+
+    if len(prophet_input) < 2:
+        return _empty_forecast_frame()
+
+    forecast = _safe_prophet_forecast(prophet_input, periods)
+    if forecast is None:
+        forecast = _trend_fallback_forecast(prophet_input, periods)
+
+    return forecast[["ds", "yhat", "yhat_lower", "yhat_upper"]]
 
 
 def top_merchants(limit: int = 10, db_path: Path = DB_PATH) -> pd.DataFrame:
