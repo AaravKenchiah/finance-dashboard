@@ -75,6 +75,60 @@ def monthly_trend(db_path: Path = DB_PATH) -> pd.DataFrame:
     return run_named_query("monthly_spending_trend", db_path=db_path)
 
 
+def detect_spending_anomalies(db_path: Path = DB_PATH) -> pd.DataFrame:
+    """Flag category-month spend that is unusually high versus the prior 3 months."""
+    monthly_category_sql = """
+        SELECT
+            DATE_TRUNC('month', date) AS month,
+            category,
+            SUM(amount) AS total_spent
+        FROM transactions
+        GROUP BY month, category
+        ORDER BY category, month
+    """
+
+    with get_connection(db_path) as connection:
+        monthly_category_spend = connection.execute(monthly_category_sql).df()
+
+    if monthly_category_spend.empty:
+        return pd.DataFrame(
+            columns=[
+                "month",
+                "category",
+                "total_spent",
+                "rolling_mean",
+                "rolling_std",
+                "threshold",
+                "amount_above_normal",
+            ]
+        )
+
+    monthly_category_spend["month"] = pd.to_datetime(monthly_category_spend["month"])
+    monthly_category_spend = monthly_category_spend.sort_values(["category", "month"])
+
+    baseline = monthly_category_spend.groupby("category")["total_spent"].transform(
+        lambda series: series.shift(1).rolling(window=3, min_periods=3).mean()
+    )
+    volatility = monthly_category_spend.groupby("category")["total_spent"].transform(
+        lambda series: series.shift(1).rolling(window=3, min_periods=3).std()
+    )
+
+    monthly_category_spend["rolling_mean"] = baseline
+    monthly_category_spend["rolling_std"] = volatility
+    monthly_category_spend["threshold"] = baseline + (2 * volatility)
+    monthly_category_spend["amount_above_normal"] = (
+        monthly_category_spend["total_spent"] - monthly_category_spend["rolling_mean"]
+    )
+
+    anomalies = monthly_category_spend[
+        monthly_category_spend["total_spent"] > monthly_category_spend["threshold"]
+    ].copy()
+
+    return anomalies.sort_values(["month", "amount_above_normal"], ascending=[False, False]).reset_index(
+        drop=True
+    )
+
+
 def top_merchants(limit: int = 10, db_path: Path = DB_PATH) -> pd.DataFrame:
     """Return the merchants with the highest total spending."""
     return run_named_query("top_merchants", parameters=[limit], db_path=db_path)

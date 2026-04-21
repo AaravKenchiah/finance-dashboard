@@ -75,6 +75,35 @@ class FinanceDashboardTests(unittest.TestCase):
 
         pd.testing.assert_frame_equal(actual, expected, check_dtype=False, atol=1e-9, rtol=1e-9)
 
+    def test_detect_spending_anomalies_flags_category_month_spikes(self) -> None:
+        anomaly_csv = Path(self.temp_dir.name) / "anomaly_transactions.csv"
+        anomaly_csv.write_text(
+            "\n".join(
+                [
+                    "date,amount,category,merchant",
+                    "2024-01-01,100.00,Travel,Airline",
+                    "2024-02-01,110.00,Travel,Airline",
+                    "2024-03-01,90.00,Travel,Airline",
+                    "2024-04-01,140.00,Travel,Airline",
+                    "2024-01-01,50.00,Groceries,Market",
+                    "2024-02-01,52.00,Groceries,Market",
+                    "2024-03-01,48.00,Groceries,Market",
+                    "2024-04-01,53.00,Groceries,Market",
+                ]
+            )
+        )
+        anomaly_db_path = Path(self.temp_dir.name) / "anomaly_test_finance.db"
+        load_transactions(anomaly_db_path, anomaly_csv)
+
+        actual = analysis.detect_spending_anomalies(anomaly_db_path)
+
+        self.assertEqual(len(actual), 1)
+        self.assertEqual(actual.loc[0, "category"], "Travel")
+        self.assertEqual(pd.Timestamp(actual.loc[0, "month"]), pd.Timestamp("2024-04-01"))
+        self.assertAlmostEqual(actual.loc[0, "rolling_mean"], 100.00, places=2)
+        self.assertAlmostEqual(actual.loc[0, "rolling_std"], 10.00, places=2)
+        self.assertAlmostEqual(actual.loc[0, "amount_above_normal"], 40.00, places=2)
+
     def test_top_merchants_respects_limit_and_sort_order(self) -> None:
         actual = analysis.top_merchants(limit=5, db_path=self.db_path).reset_index(drop=True)
 
