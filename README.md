@@ -130,16 +130,3 @@ app/streamlit_app.py
 ```
 
 5. Deploy.
-
-## Resume Value
-
-This project highlights:
-
-- SQL table creation and refresh workflows
-- Analytical SQL queries with `GROUP BY`, `SUM`, `COUNT`, `ORDER BY`, and date functions
-- A Python data pipeline that connects CSV data to a relational analytics workflow
-- Rolling-window anomaly detection for spending spikes
-- Time-series forecasting with Prophet
-- Defensive production-minded handling around forecasting failures
-- Streamlit dashboard development
-- Automated tests covering the data pipeline, analysis layer, and dashboard preparation logic
